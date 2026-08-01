@@ -1,0 +1,37 @@
+name: Daily Data Pipeline
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs automatically every day at midnight UTC
+  workflow_dispatch: # Gives you a manual "Run" button on GitHub
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run Ingestion Pipeline
+        run: python src/pipeline/ingest.py
+        
+      - name: Commit and Push Fresh Data
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/metrics.parquet
+          git commit -m "⚙️ Auto-update pipeline data" || echo "No changes to commit"
+          git push
