@@ -1,40 +1,32 @@
-# ⚡ Real-Time Operational Anomaly Engine
+# 📈 NQ Futures Anomaly Engine
 
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.32.0-FF4B4B?logo=streamlit&logoColor=white)
-![DuckDB](https://img.shields.io/badge/DuckDB-0.10.0-FFF000?logo=duckdb&logoColor=black)
-![Polars](https://img.shields.io/badge/Polars-Fast-blue)
-![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-ML-F7931E?logo=scikit-learn&logoColor=white)
-![GitHub Actions](https://img.shields.io/badge/CI%2FCD-Automated-2088FF?logo=github-actions&logoColor=white)
+An end-to-end quantitative trading microservice that streams real-time Nasdaq (NQ) and VIX market data, detects microstructural anomalies using an Isolation Forest machine learning model, and dynamically optimizes trading parameters via a vectorized grid search.
 
-## 📌 Overview
-An end-to-end, zero-maintenance data pipeline and machine learning engine designed to detect structural deviations in high-frequency operational data. Built for speed and efficiency, this architecture ingests live market metrics, calculates rolling statistical features, and flags anomalies using an unsupervised Machine Learning model without human intervention.
+![Architecture](https://img.shields.io/badge/Architecture-Microservices-blue)
+![Backend](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python-3776AB?logo=python&logoColor=white)
+![Frontend](https://img.shields.io/badge/Frontend-React%20%7C%20Vite-61DAFB?logo=react&logoColor=black)
+![Infrastructure](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 
-## 🏗️ Architecture & Tech Stack
+## 🏗 System Architecture
 
-1. **Ingestion & Processing (`Polars`)**: Handles lightning-fast feature engineering (moving averages, z-scores) from live API endpoints.
-2. **Storage Layer (`DuckDB`)**: Aggregates and compresses the processed time-series data directly into a highly efficient `Parquet` format.
-3. **Machine Learning Brain (`Isolation Forest`)**: Dynamically reads the Parquet data and algorithmically flags the most volatile market events.
-4. **CI/CD Automation (`GitHub Actions`)**: A cron job spins up a server every night at midnight UTC to fetch fresh data, run the pipeline, and commit the new data directly to the repository.
-5. **Interactive UI (`Streamlit` + `Plotly`)**: A dark-mode dashboard that visualizes the anomalies and allows technical leads to adjust model sensitivity on the fly.
+The application is fully containerized and decoupled into three operational layers:
 
-## 🚀 Quick Start (Local Setup)
+1. **The In-Memory Data Pipeline (Python/Pandas):** 
+   A continuous background worker pulls live OHLCV data for NQ Futures and the CBOE Volatility Index (VIX), calculates rolling Z-scores, and merges them into a synchronized time-series cache.
+2. **The ML & Optimizer Engine (Scikit-Learn/Numpy):**
+   Executes an unsupervised Isolation Forest model to detect market structure breaks. An algorithmic grid search vectorizes 48 combinations of Stop-Loss, Take-Profit, and ML Sensitivity parameters to find the highest Sharpe Ratio for the current market regime. Results are committed to a persistent SQLite database.
+3. **The Trading Terminal (React/WebSockets/TradingView):**
+   A React frontend establishes a persistent WSS tunnel to the FastAPI backend, rendering sub-second ML inferences and backtest metrics onto a high-performance TradingView Lightweight Chart canvas.
 
-Clone the repository and spin up the engine locally in seconds.
+## 🚀 Quick Start
 
-```bash
-# 1. Clone the repo
-git clone [https://github.com/DimitriosChrysovalantis/anomaly-engine.git](https://github.com/DimitriosChrysovalantis/anomaly-engine.git)
-cd anomaly-engine
+The entire stack is containerized. To spin up the backend ML engine and the frontend trading terminal locally:
 
-# 2. Install dependencies
-pip install -r requirements.txt
+1. Ensure Docker Desktop is running.
+2. Clone the repository and navigate to the root folder.
+3. Boot the microservices:
+   ```bash
+   docker-compose up --build
 
-# 3. Run the ingestion pipeline to generate fresh data
-python src/pipeline/ingest.py
+Navigate to http://localhost:5173 in your browser.
 
-# 4. Launch the interactive dashboard
-streamlit run src/app/main.py
-
-Lets connect:
-email: husboula@gmail.com

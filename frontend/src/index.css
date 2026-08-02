@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%);
+  color: white;
+  min-height: 100vh;
+}

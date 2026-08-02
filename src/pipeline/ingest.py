@@ -1,62 +1,84 @@
 import polars as pl
 import duckdb
 import os
-import urllib.request
-import json
+import yfinance as yf
+import pandas as pd
 import ssl
 
-# Save directly inside the project root's data/ folder
+# Global bypass for Mac Python SSL certificate verification error
+ssl._create_default_https_context = ssl._create_unverified_context
+
 DATA_DIR = "data"
 PARQUET_PATH = os.path.join(DATA_DIR, "metrics.parquet")
 
 def fetch_and_process_data():
-    # Ensure the data folder exists inside anomaly-engine
     os.makedirs(DATA_DIR, exist_ok=True)
     
-    # Using Binance API
-    url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000"
-    print("1. Fetching raw operational feed...")
+    print("1. Fetching raw OHLCV market feed for NQ Futures...")
     
-    # Bypass Mac Python SSL certificate verification error
-    ssl_context = ssl._create_unverified_context()
+    # Fetch NQ=F (Nasdaq 100 E-mini Futures) hourly data
+    df_pd = yf.download("NQ=F", period="1mo", interval="1h", progress=False)
     
-    # Fetch data from URL using urllib
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, context=ssl_context) as response:
-        raw_data = json.loads(response.read().decode())
+    if df_pd.empty:
+        print("❌ Error: Could not fetch NQ futures data.")
+        return
         
-    # Binance returns lists. Index 0 is timestamp(ms), Index 4 is Close Price.
-    df_raw = pl.DataFrame({
-        "timestamp_ms": [row[0] for row in raw_data],
-        "value": [float(row[4]) for row in raw_data]
-    })
+    # Reset index so datetime/date becomes a standard column
+    df_pd = df_pd.reset_index()
     
-    print("2. Processing features with Polars...")
-    # Clean the data and calculate rolling statistics (moving averages, std dev)
+    # Flatten MultiIndex columns if present, otherwise just lowercase them
+    if isinstance(df_pd.columns, pd.MultiIndex):
+        df_pd.columns = [str(col[0]).lower() for col in df_pd.columns]
+    else:
+        df_pd.columns = [str(c).lower() for c in df_pd.columns]
+        
+    # Dynamically find the time column regardless of what yfinance named it
+    possible_time_cols = ["datetime", "date", "index", "level_0"]
+    time_col = next((col for col in possible_time_cols if col in df_pd.columns), None)
+    
+    if not time_col:
+        # Fallback: just take the very first column since time is always index 0 after reset_index()
+        time_col = df_pd.columns[0]
+        
+    df_pd = df_pd.rename(columns={time_col: "timestamp"})
+    
+    # Ensure timestamp is datetime type and strip timezone
+    df_pd['timestamp'] = pd.to_datetime(df_pd['timestamp'])
+    if df_pd['timestamp'].dt.tz is not None:
+        df_pd['timestamp'] = df_pd['timestamp'].dt.tz_localize(None)
+
+    # Convert to Polars for lightning-fast feature processing
+    df_raw = pl.from_pandas(df_pd)
+    
+    print("2. Processing multivariate features...")
     df_processed = (
         df_raw
+        .select([
+            pl.col("timestamp"),
+            pl.col("open").cast(pl.Float64),
+            pl.col("high").cast(pl.Float64),
+            pl.col("low").cast(pl.Float64),
+            pl.col("close").cast(pl.Float64).alias("value"),
+            pl.col("volume").cast(pl.Float64)
+        ])
         .with_columns([
-            pl.col("timestamp_ms").cast(pl.Datetime("ms")).alias("timestamp"),
             pl.col("value").pct_change().alias("returns"),
             pl.col("value").rolling_mean(window_size=24).alias("rolling_mean_24h"),
             pl.col("value").rolling_std(window_size=24).alias("rolling_std_24h"),
+            (pl.col("high") - pl.col("low")).alias("candle_spread")
         ])
         .filter(pl.col("rolling_mean_24h").is_not_null())
     )
 
-    print("3. Aggregating and compressing with DuckDB...")
-    # Use DuckDB to calculate z-scores and save directly to Parquet format
+    print("3. Aggregating and compressing to Parquet...")
     con = duckdb.connect()
     con.register("df_polars", df_processed.to_pandas())
     
     con.execute(f"""
         COPY (
             SELECT 
-                timestamp,
-                value,
-                returns,
-                rolling_mean_24h,
-                rolling_std_24h,
+                timestamp, open, high, low, value, volume, returns,
+                rolling_mean_24h, rolling_std_24h, candle_spread,
                 (value - rolling_mean_24h) / NULLIF(rolling_std_24h, 0) AS z_score
             FROM df_polars
             ORDER BY timestamp DESC
@@ -64,7 +86,7 @@ def fetch_and_process_data():
     """)
     con.close()
     
-    print(f"✅ Pipeline complete. Parquet stored at: {PARQUET_PATH}")
+    print(f"✅ NQ Futures Pipeline complete.")
 
 if __name__ == "__main__":
     fetch_and_process_data()

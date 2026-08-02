@@ -1,6 +1,8 @@
-polars>=0.20.0
-duckdb>=0.10.0
-scikit-learn>=1.4.0
-streamlit>=1.32.0
-plotly>=5.19.0
-pyarrow>=15.0.0
+fastapi
+uvicorn
+pandas
+numpy
+scikit-learn
+yfinance
+requests
+websockets
